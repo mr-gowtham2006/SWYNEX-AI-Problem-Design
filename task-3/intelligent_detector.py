@@ -16,7 +16,7 @@ SUSPICIOUS_PATTERNS = {
     "Prize or reward language": [
         "won", "winner", "prize", "reward", "cash", "lottery"
     ],
-    "Urgency language": [
+    "Urgency language": [ 
         "urgent", "immediately", "act now", "hurry", "limited time"
     ],
     "Financial language": [
@@ -72,9 +72,12 @@ def analyze_message(message):
         if re.search(r"https?://|www\.", message_lower):
             indicators.append("Contains a web link")
 
-        if result == "SPAM" and confidence >= 85:
-            risk_level = "HIGH"
-        elif result == "SPAM" or confidence < 70:
+        if result == "SPAM":
+            if confidence >= 85 or len(indicators) >= 3:
+               risk_level = "HIGH"
+            else:
+               risk_level = "MEDIUM"
+        elif confidence < 70:
             risk_level = "MEDIUM"
         else:
             risk_level = "LOW"
