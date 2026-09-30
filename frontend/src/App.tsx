@@ -9,7 +9,7 @@ import { SafetyReportingTab } from "@/components/SafetyReportingTab"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 
 export default function App() {
-  const { data, loading, error, analyze, reset } = useAnalyzer()
+  const { data, loading, error, analyze, reset, apiUrl } = useAnalyzer()
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 font-sans antialiased selection:bg-cyan-500/30 selection:text-cyan-200">
@@ -63,7 +63,7 @@ export default function App() {
               <span className="font-semibold text-rose-200">Backend Communication Error</span>
               <p className="text-[11px] text-rose-300/90">{error}</p>
               <p className="text-[10px] text-rose-400/80">
-                Ensure the FastAPI backend is running at <code className="bg-slate-900 px-1 py-0.5 rounded">http://127.0.0.1:8000</code>
+                Ensure the FastAPI backend is running at <code className="bg-slate-900 px-1 py-0.5 rounded">{apiUrl}</code>
               </p>
             </div>
           </div>

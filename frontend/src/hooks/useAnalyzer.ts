@@ -1,12 +1,13 @@
-﻿import { useState, useCallback } from "react"
+import { useState, useCallback } from "react"
 import type { AnalyzeRequest, AnalyzeResponse } from "@/types/api"
 
-const API_BASE = "http://127.0.0.1:8000"
+const API_BASE = (import.meta.env.VITE_API_URL || "http://127.0.0.1:8000").replace(/\/+$/, "")
 
 export interface AnalyzerState {
   data: AnalyzeResponse | null
   loading: boolean
   error: string | null
+  apiUrl: string
 }
 
 export function useAnalyzer() {
@@ -14,10 +15,11 @@ export function useAnalyzer() {
     data: null,
     loading: false,
     error: null,
+    apiUrl: API_BASE,
   })
 
   const analyze = useCallback(async (req: AnalyzeRequest) => {
-    setState({ data: null, loading: true, error: null })
+    setState((prev) => ({ ...prev, data: null, loading: true, error: null }))
     try {
       const res = await fetch(`${API_BASE}/api/analyze`, {
         method: "POST",
@@ -29,15 +31,15 @@ export function useAnalyzer() {
         throw new Error(`API error ${res.status}: ${detail}`)
       }
       const data: AnalyzeResponse = await res.json()
-      setState({ data, loading: false, error: null })
+      setState((prev) => ({ ...prev, data, loading: false, error: null }))
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Unknown error"
-      setState({ data: null, loading: false, error: msg })
+      setState((prev) => ({ ...prev, data: null, loading: false, error: msg }))
     }
   }, [])
 
   const reset = useCallback(() => {
-    setState({ data: null, loading: false, error: null })
+    setState((prev) => ({ ...prev, data: null, loading: false, error: null }))
   }, [])
 
   return { ...state, analyze, reset }
