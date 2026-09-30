@@ -7,7 +7,10 @@ app.py — Streamlit application entry point
 TASK 4.1: Application skeleton and UI layout.
 TASK 4.2: Integrated Task 3 analyze_message() engine.
 TASK 4.3: Local URL analysis via barb-phish CLI.
-           Risk synthesis and explainability will be added in Tasks 4.4-4.5.
+TASK 4.4: Risk synthesis and uncertainty logic.
+TASK 4.5: Explainability / feature influence.
+TASK 4.6: Safety guidance + official TRAI/DoT/MHA reporting.
+UI REDESIGN: Compact two-column layout, tabbed drill-down, dark cybersecurity theme.
 """
 
 import sys
@@ -76,6 +79,17 @@ def extract_urls(message: str) -> list:
     This prevents malformed non-URL strings from being sent to barb-phish.
     """
     return _URL_PATTERN.findall(message)
+
+
+def defang_url(url: str) -> str:
+    """
+    Defang a URL so it cannot be accidentally clicked or resolved.
+    Replaces schemes and dots in the domain to prevent clickable hyperlinks.
+    """
+    url = re.sub(r"^https://", "hxxps[://]", url)
+    url = re.sub(r"^http://", "hxxp[://]", url)
+    url = re.sub(r"^www\.", "www[.]", url)
+    return url
 
 
 def analyze_url(url: str) -> dict:
@@ -487,329 +501,553 @@ def get_official_reporting_info() -> list:
     ]
 
 
-# ---------------------------------------------------------------------------
-# PAGE CONFIG
-# ---------------------------------------------------------------------------
-st.set_page_config(
-    page_title="AI SMS Safety Analyzer",
-    page_icon="🔍",
-    layout="centered",
-    initial_sidebar_state="collapsed",
-)
+# ===========================================================================
+# UI — only executed when running under the Streamlit server.
+# Tests import this file to access logic functions at module level;
+# wrapping everything in _run_ui() prevents MagicMock unpacking errors.
+# ===========================================================================
 
-# ---------------------------------------------------------------------------
-# HEADER
-# ---------------------------------------------------------------------------
-st.title("🔍 AI SMS Safety Analyzer")
-st.caption("SWYNEX Technologies · AI Internship · Task 4")
+def _run_ui():
+    """Render the full Streamlit application UI."""
 
-st.markdown(
-    """
-    Paste an SMS message below to check whether it may be **spam, a scam,
-    or a phishing attempt**. All analysis runs locally on this device —
-    no message content is sent to any external server.
-    """
-)
-
-# Warn prominently if the model failed to load — do not silently fail.
-if not _MODEL_LOADED:
-    st.error(
-        "**Analysis engine could not be loaded.**\n\n"
-        "Make sure `task-2/spam_classifier.pkl` exists relative to `app.py`.\n\n"
-        f"Details: {_MODEL_ERROR}",
-        icon="🚨",
+    # =========================================================================
+    # PAGE CONFIG
+    # =========================================================================
+    st.set_page_config(
+        page_title="AI SMS Safety Analyzer",
+        page_icon="🛡️",
+        layout="wide",
+        initial_sidebar_state="collapsed",
     )
 
-st.divider()
+    # =========================================================================
+    # GLOBAL STYLE INJECTION
+    # Minimal, targeted CSS — no brittle internal Streamlit class selectors.
+    # =========================================================================
+    st.markdown("""
+<style>
+/* ── Verdict hero badge pills ─────────────────────────────── */
+.verdict-scam {
+    display: inline-block;
+    background: rgba(239,68,68,0.15);
+    color: #EF4444;
+    border: 1px solid rgba(239,68,68,0.35);
+    padding: 6px 18px;
+    border-radius: 9999px;
+    font-weight: 700;
+    font-size: 1.05rem;
+    letter-spacing: 0.04em;
+}
+.verdict-spam {
+    display: inline-block;
+    background: rgba(245,158,11,0.15);
+    color: #F59E0B;
+    border: 1px solid rgba(245,158,11,0.35);
+    padding: 6px 18px;
+    border-radius: 9999px;
+    font-weight: 700;
+    font-size: 1.05rem;
+    letter-spacing: 0.04em;
+}
+.verdict-uncertain {
+    display: inline-block;
+    background: rgba(139,92,246,0.15);
+    color: #8B5CF6;
+    border: 1px solid rgba(139,92,246,0.35);
+    padding: 6px 18px;
+    border-radius: 9999px;
+    font-weight: 700;
+    font-size: 1.05rem;
+    letter-spacing: 0.04em;
+}
+.verdict-safe {
+    display: inline-block;
+    background: rgba(16,185,129,0.15);
+    color: #10B981;
+    border: 1px solid rgba(16,185,129,0.35);
+    padding: 6px 18px;
+    border-radius: 9999px;
+    font-weight: 700;
+    font-size: 1.05rem;
+    letter-spacing: 0.04em;
+}
+/* ── Token influence chips ────────────────────────────────── */
+.token-spam {
+    display: inline-block;
+    background: rgba(239,68,68,0.12);
+    color: #FCA5A5;
+    border: 1px solid rgba(239,68,68,0.25);
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-family: 'Consolas','Courier New',monospace;
+    font-size: 0.82rem;
+    margin: 2px 3px;
+}
+.token-ham {
+    display: inline-block;
+    background: rgba(16,185,129,0.12);
+    color: #6EE7B7;
+    border: 1px solid rgba(16,185,129,0.25);
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-family: 'Consolas','Courier New',monospace;
+    font-size: 0.82rem;
+    margin: 2px 3px;
+}
+/* ── Defanged URL display ─────────────────────────────────── */
+.defanged-url {
+    display: block;
+    font-family: 'Consolas','Courier New',monospace;
+    background: rgba(15,23,42,0.9);
+    color: #38BDF8;
+    border: 1px solid #1E3A5F;
+    padding: 6px 12px;
+    border-radius: 5px;
+    font-size: 0.85rem;
+    word-break: break-all;
+    margin: 6px 0;
+}
+/* ── Eyebrow section label ────────────────────────────────── */
+.eyebrow {
+    font-size: 0.70rem;
+    font-weight: 600;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: #64748B;
+    margin-bottom: 4px;
+}
+/* ── Privacy badge ────────────────────────────────────────── */
+.privacy-badge {
+    display: inline-block;
+    background: rgba(59,130,246,0.12);
+    color: #60A5FA;
+    border: 1px solid rgba(59,130,246,0.25);
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+/* ── Guidance list items ──────────────────────────────────── */
+.guidance-item {
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    font-size: 0.9rem;
+    line-height: 1.55;
+}
+.guidance-item:last-child { border-bottom: none; }
+</style>
+""", unsafe_allow_html=True)
 
-# ---------------------------------------------------------------------------
-# INPUT SECTION
-# ---------------------------------------------------------------------------
-st.subheader("📩 Enter SMS Message")
+    # =========================================================================
+    # HEADER
+    # =========================================================================
+    hdr_left, hdr_right = st.columns([6, 2])
+    with hdr_left:
+        st.markdown(
+            '<p style="font-size:1.55rem;font-weight:700;color:#F8FAFC;margin-bottom:0;line-height:1.2">'
+            '🛡️ AI SMS Safety Analyzer</p>'
+            '<p style="font-size:0.82rem;color:#64748B;margin-top:2px">'
+            'SWYNEX Technologies &middot; AI Internship &middot; Task 4 '
+            '&mdash; Scam &amp; Phishing Triage Engine</p>',
+            unsafe_allow_html=True,
+        )
+    with hdr_right:
+        st.markdown(
+            '<div style="text-align:right;padding-top:10px">'
+            '<span class="privacy-badge">🔒 Local AI &middot; No Data Sent Externally</span>'
+            '</div>',
+            unsafe_allow_html=True,
+        )
 
-sms_input = st.text_area(
-    label="SMS Message",
-    placeholder="Paste your SMS here...",
-    height=150,
-    max_chars=5000,
-    help="Maximum 5000 characters. Paste the full SMS text you received.",
-    label_visibility="collapsed",
-)
+    if not _MODEL_LOADED:
+        st.error(
+            "**Analysis engine could not be loaded.**  \n"
+            "Make sure `task-2/spam_classifier.pkl` exists relative to `app.py`.  \n"
+            f"Details: {_MODEL_ERROR}",
+            icon="🚨",
+        )
 
-char_count = len(sms_input)
-if char_count > 0:
-    st.caption(f"{char_count} / 5000 characters")
+    st.divider()
 
-st.subheader("📋 Sender ID (optional)")
+    # =========================================================================
+    # SAMPLE PRESETS
+    # =========================================================================
+    _PRESETS = {
+        "None": "",
+        "🏦 SBI KYC Scam": (
+            "Dear Customer, Your SBI account will be blocked. "
+            "Update KYC immediately: http://sbi-kyc-update.fake-portal.com"
+        ),
+        "🎰 Lottery Spam": (
+            "WINNER! You have won Rs.50,000 in our lucky draw. "
+            "Claim FREE prize now, call 9876543210 immediately. Offer expires today!"
+        ),
+        "💡 Electricity Scam": (
+            "URGENT: Your electricity connection will be disconnected tonight at 9 PM. "
+            "Pay Rs.800 immediately. Call 8765432190 to avoid disconnection."
+        ),
+        "✅ OTP (Clean)": (
+            "Your OTP for SBI NetBanking login is 482917. "
+            "Valid for 10 minutes. Do not share with anyone."
+        ),
+    }
 
-sender_id_input = st.text_input(
-    label="Sender ID",
-    placeholder="e.g. VK-HDFCBK, AM-AMAZON, or a phone number",
-    help=(
-        "Enter the Sender ID or phone number that appeared in the SMS. "
-        "This is used to provide TRAI header verification guidance."
-    ),
-    label_visibility="collapsed",
-)
+    # =========================================================================
+    # MAIN TWO-COLUMN LAYOUT
+    # =========================================================================
+    col_input, col_result = st.columns([5, 6], gap="large")
 
-st.divider()
+    # ─────────────────────────────────────────────────────────────────────────
+    # LEFT COLUMN — INPUT
+    # ─────────────────────────────────────────────────────────────────────────
+    with col_input:
+        with st.container(border=True):
+            st.markdown('<p class="eyebrow">📨 Message Under Analysis</p>', unsafe_allow_html=True)
 
-# ---------------------------------------------------------------------------
-# ANALYZE BUTTON
-# ---------------------------------------------------------------------------
-analyze_button = st.button(
-    "🔍 Analyze Message",
-    type="primary",
-    use_container_width=True,
-    disabled=(char_count == 0 or not _MODEL_LOADED),
-)
+            # Quick-fill presets
+            preset_choice = st.pills(
+                "Quick test presets",
+                options=list(_PRESETS.keys()),
+                default="None",
+                label_visibility="collapsed",
+            )
+            preset_text = _PRESETS.get(preset_choice, "")
 
-# ---------------------------------------------------------------------------
-# RESULT AREA
-# ---------------------------------------------------------------------------
-if analyze_button:
-    if not sms_input.strip():
-        st.error("Please enter an SMS message before analyzing.")
-    else:
-        with st.spinner("Analyzing..."):
-            # Task 3: SMS classification (unchanged)
-            t3_result = analyze_message(sms_input)
+            sms_input = st.text_area(
+                label="SMS Message",
+                value=preset_text,
+                placeholder="Paste the SMS message you received here\u2026",
+                height=130,
+                max_chars=5000,
+                help="Maximum 5000 characters. Paste the full SMS text you received.",
+                label_visibility="collapsed",
+            )
 
-            # Compute TF-IDF non-zero vocabulary count (nnz) for OOV detection
-            nnz = None
-            if _MODEL_LOADED:
-                try:
-                    vec = model.named_steps["tfidf"].transform([sms_input])
-                    nnz = vec.nnz
-                except Exception:
-                    nnz = None
+            char_count = len(sms_input)
+            word_count = len(sms_input.split()) if sms_input.strip() else 0
+            st.caption(f"{char_count} / 5000 chars \u00b7 {word_count} words")
 
-            # Task 4.3: URL extraction and local analysis
-            urls = extract_urls(sms_input)
-            url_results = [analyze_url(u) for u in urls]
+            sender_id_input = st.text_input(
+                label="Sender ID (optional)",
+                placeholder="e.g. VK-HDFCBK, AM-AMAZON, or a 10-digit mobile number",
+                help=(
+                    "Enter the Sender ID or phone number shown in the SMS. "
+                    "Used to provide TRAI header verification guidance."
+                ),
+            )
 
-            # Task 4.4: Overall Risk Synthesis
-            synthesis_result = synthesize_risk(t3_result, url_results, nnz=nnz)
+            analyze_button = st.button(
+                "🔍 Run Full Security Analysis",
+                type="primary",
+                use_container_width=True,
+                disabled=(char_count == 0 or not _MODEL_LOADED),
+            )
 
-            # Task 4.5: Feature-level explainability
-            explanation_result = explain_prediction(sms_input)
-
-        st.divider()
-        st.subheader("📊 Analysis Result")
-
-        # ------------------------------------------------------------------
-        # ERROR PATH — Task 3 returned a validation/runtime error
-        # ------------------------------------------------------------------
-        if "error" in t3_result:
-            st.error(f"{t3_result['error']}", icon="🚨")
-
-        # ------------------------------------------------------------------
-        # SUCCESS PATH — Task 3 returned a full analysis dict
-        # ------------------------------------------------------------------
+    # ─────────────────────────────────────────────────────────────────────────
+    # RIGHT COLUMN — RESULTS
+    # ─────────────────────────────────────────────────────────────────────────
+    with col_result:
+        if not analyze_button:
+            with st.container(border=True):
+                st.markdown(
+                    '<div style="text-align:center;padding:40px 20px;color:#475569">'
+                    '<div style="font-size:2.5rem;margin-bottom:12px">🛡️</div>'
+                    '<div style="font-size:1rem;font-weight:600;color:#94A3B8">Waiting for Analysis</div>'
+                    '<div style="font-size:0.82rem;margin-top:6px">'
+                    'Paste an SMS on the left and click <strong>Run Full Security Analysis</strong>.'
+                    '</div></div>',
+                    unsafe_allow_html=True,
+                )
         else:
-            prediction  = t3_result["prediction"]   # "SPAM" or "NOT SPAM"
-            confidence  = t3_result["confidence"]   # float
-            risk_level  = t3_result["risk_level"]   # "LOW" / "MEDIUM" / "HIGH"
-            indicators  = t3_result["indicators"]   # list[str]
-            explanation = t3_result["explanation"]  # str
-
-            # ---- Prediction badge ----
-            if prediction == "SPAM":
-                st.error(f"🚨  **{prediction}**", icon="🚨")
+            if not sms_input.strip():
+                st.error("Please enter an SMS message before analyzing.")
             else:
-                st.success(f"✅  **{prediction}**", icon="✅")
+                with st.spinner("Analyzing — SMS classifier, URL forensics, and risk synthesis running\u2026"):
+                    # Task 3: SMS classification (unchanged)
+                    t3_result = analyze_message(sms_input)
 
-            # ---- Metrics row ----
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric(label="Prediction", value=prediction)
-            with col2:
-                st.metric(label="Confidence", value=f"{confidence:.2f}%")
-            with col3:
-                risk_emoji = {"LOW": "🟢", "MEDIUM": "🟡", "HIGH": "🔴"}.get(
-                    risk_level, ""
-                )
-                st.metric(label="Risk Level", value=f"{risk_emoji} {risk_level}")
+                    # Compute TF-IDF non-zero vocabulary count (nnz) for OOV detection
+                    nnz = None
+                    if _MODEL_LOADED:
+                        try:
+                            vec = model.named_steps["tfidf"].transform([sms_input])
+                            nnz = vec.nnz
+                        except Exception:
+                            nnz = None
 
-            st.divider()
+                    # Task 4.3: URL extraction and local analysis
+                    urls = extract_urls(sms_input)
+                    url_results = [analyze_url(u) for u in urls]
 
-            # ---- Explanation ----
-            st.markdown(f"**ℹ️ Explanation:** {explanation}")
+                    # Task 4.4: Overall Risk Synthesis
+                    synthesis_result = synthesize_risk(t3_result, url_results, nnz=nnz)
 
-            # ---- Suspicious indicators ----
-            st.markdown("**🔎 Suspicious Indicators:**")
-            if indicators:
-                for indicator in indicators:
-                    st.markdown(f"- {indicator}")
-            else:
-                st.markdown("- None detected")
+                    # Task 4.5: Feature-level explainability
+                    explanation_result = explain_prediction(sms_input)
 
-            # ------------------------------------------------------------------
-            # TASK 4.3 — URL ANALYSIS RESULTS
-            # Note: URL results are displayed independently.
-            # Risk synthesis (combining URL + SMS verdicts) is TASK 4.4.
-            # ------------------------------------------------------------------
-            st.divider()
-            st.subheader("🔗 URL Analysis")
+                    # Task 4.6: Safety guidance
+                    overall_state = synthesis_result["state"]
+                    safety_guidance = get_safety_guidance(overall_state, t3_result, url_results)
 
-            if not urls:
-                st.info("No URLs detected in this message.", icon="ℹ️")
-            else:
-                st.caption(f"{len(urls)} URL(s) found — analyzed locally using barb-phish (offline, no data sent externally).")
+                # ── Error path ─────────────────────────────────────────────
+                if "error" in t3_result:
+                    st.error(f"{t3_result['error']}", icon="🚨")
 
-                for ur in url_results:
-                    exit_code = ur["exit_code"]
-                    verdict   = ur["verdict"] or "UNKNOWN"
-                    label, emoji = _BARB_EXIT_LABELS.get(exit_code, ("UNKNOWN", "⚪"))
-
-                    with st.expander(f"{emoji} {verdict}  —  {ur['url']}", expanded=True):
-
-                        if ur["error"]:
-                            st.warning(ur["error"])
-
-                        else:
-                            col_a, col_b = st.columns(2)
-                            with col_a:
-                                st.metric("Verdict", f"{emoji} {verdict}")
-                            with col_b:
-                                score_display = (
-                                    f"{ur['risk_score']:.1f}"
-                                    if ur["risk_score"] is not None
-                                    else "N/A"
-                                )
-                                st.metric("Risk Score", score_display)
-
-                            if ur["signals"]:
-                                st.markdown("**Signals detected:**")
-                                for sig in ur["signals"]:
-                                    sev   = sig.get("severity", "")
-                                    lbl   = sig.get("label", "")
-                                    detail = sig.get("detail", "")
-                                    sev_emoji = {"HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🟢"}.get(sev, "⚪")
-                                    st.markdown(f"- {sev_emoji} **{lbl}**: {detail}")
-                            else:
-                                st.markdown("No suspicious signals detected for this URL.")
-
-            # ------------------------------------------------------------------
-            # TASK 4.4 — OVERALL SAFETY ASSESSMENT (RISK SYNTHESIS)
-            # ------------------------------------------------------------------
-            st.divider()
-            st.subheader("🛡️ Overall Safety Assessment")
-
-            overall_state = synthesis_result["state"]
-            reason = synthesis_result["reason"]
-
-            state_styles = {
-                "SCAM":                {"emoji": "🚨", "color_fn": st.error},
-                "SPAM":                {"emoji": "⚠️", "color_fn": st.warning},
-                "UNCERTAIN":           {"emoji": "❓", "color_fn": st.info},
-                "NO THREAT DETECTED":  {"emoji": "✅", "color_fn": st.success},
-            }
-            style = state_styles.get(overall_state, {"emoji": "⚪", "color_fn": st.info})
-            style["color_fn"](f"### {style['emoji']} Overall Assessment: **{overall_state}**\n\n{reason}")
-
-            # Evidence summary breakdown
-            with st.expander("🔍 Synthesized Evidence Summary", expanded=True):
-                st.markdown(f"- **SMS Model Prediction:** `{prediction}` ({confidence:.2f}% confidence, Task 3 Risk: `{risk_level}`)")
-                if nnz is not None:
-                    st.markdown(f"- **Recognized Vocabulary Terms (TF-IDF):** `{nnz}` non-zero token(s)")
-                if urls:
-                    st.markdown(f"- **URLs Analyzed:** {len(urls)} link(s)")
-                    for u_res in url_results:
-                        st.markdown(f"  - `{u_res['url']}`: **{u_res['verdict'] or 'N/A'}** (exit code {u_res['exit_code']})")
+                # ── Success path ────────────────────────────────────────────
                 else:
-                    st.markdown("- **URLs Analyzed:** None present")
+                    prediction  = t3_result["prediction"]
+                    confidence  = t3_result["confidence"]
+                    risk_level  = t3_result["risk_level"]
+                    indicators  = t3_result["indicators"]
+                    reason      = synthesis_result["reason"]
 
-            # ------------------------------------------------------------------
-            # TASK 4.5 — WHY DID THE ANALYZER MAKE THIS DECISION?
-            # ------------------------------------------------------------------
-            st.divider()
-            st.subheader("💡 Why did the analyzer make this decision?")
+                    # ── Hero Verdict Card ────────────────────────────────────
+                    _verdict_css = {
+                        "SCAM":               "verdict-scam",
+                        "SPAM":               "verdict-spam",
+                        "UNCERTAIN":          "verdict-uncertain",
+                        "NO THREAT DETECTED": "verdict-safe",
+                    }
+                    _verdict_icon = {
+                        "SCAM":               "🚨",
+                        "SPAM":               "⚠️",
+                        "UNCERTAIN":          "🔍",
+                        "NO THREAT DETECTED": "🛡️",
+                    }
+                    _verdict_action = {
+                        "SCAM":               "⛔ Do NOT click any links or share OTPs.",
+                        "SPAM":               "🚫 Block sender — do not reply or click links.",
+                        "UNCERTAIN":          "⚠️ Proceed with caution — verify sender independently.",
+                        "NO THREAT DETECTED": "✔️ No immediate action required.",
+                    }
+                    css_cls = _verdict_css.get(overall_state, "verdict-uncertain")
+                    icon    = _verdict_icon.get(overall_state, "❓")
+                    action  = _verdict_action.get(overall_state, "")
 
-            # 1. Message indicators (Rule-based from Task 3)
-            st.markdown("#### 📋 Message indicators (Rule-based)")
-            if indicators:
-                for ind in indicators:
-                    st.markdown(f"- ⚠️ {ind}")
-            else:
-                st.markdown("- None detected (no rule-based trigger phrases matched)")
+                    with st.container(border=True):
+                        st.markdown(
+                            f'<span class="{css_cls}">{icon} {overall_state}</span>',
+                            unsafe_allow_html=True,
+                        )
+                        st.markdown(
+                            f"<small style='color:#94A3B8'>{reason}</small>",
+                            unsafe_allow_html=True,
+                        )
+                        st.markdown(f"**{action}**")
 
-            # 2. Model explanation (Learned TF-IDF + Logistic Regression weights)
-            st.markdown("#### 🧠 Model explanation (Learned feature weights)")
+                    # ── KPI Metric Row ───────────────────────────────────────
+                    m1, m2, m3 = st.columns(3, gap="small")
+                    risk_emoji = {"LOW": "🟢", "MEDIUM": "🟡", "HIGH": "🔴"}.get(risk_level, "⚪")
+                    with m1:
+                        st.metric("SMS Model", prediction)
+                    with m2:
+                        st.metric("Confidence", f"{confidence:.1f}%")
+                    with m3:
+                        st.metric("Risk Level", f"{risk_emoji} {risk_level}")
 
-            if not explanation_result["has_features"]:
-                st.info(
-                    "ℹ️ **No recognized vocabulary tokens**: "
-                    f"{explanation_result['summary']}"
-                )
-            else:
-                col_exp1, col_exp2 = st.columns(2)
-                with col_exp1:
-                    st.markdown("**Tokens pushing toward SPAM (🚨):**")
-                    if explanation_result["spam_features"]:
-                        for sf in explanation_result["spam_features"]:
-                            st.markdown(
-                                f"- `{sf['token']}` — pushed toward SPAM "
-                                f"(impact: `+{sf['contribution']:.3f}`)"
+                    # ── Tabbed Deep-Dive ─────────────────────────────────────
+                    tab_overview, tab_urls, tab_explain, tab_safety = st.tabs([
+                        "📋 Overview",
+                        f"🔗 URL Forensics ({len(urls)})",
+                        "💡 Explainability",
+                        "🛡️ Safety & Reporting",
+                    ])
+
+                    # ── TAB 1: OVERVIEW ──────────────────────────────────────
+                    with tab_overview:
+                        if sender_id_input.strip():
+                            s_id = sender_id_input.strip().upper()
+                            st.info(
+                                f"**Sender ID `{s_id}` — Quick Check**  \n"
+                                "Legitimate commercial headers follow the format `XY-ABCDEF`. "
+                                "Banks and government agencies do **not** use 10-digit mobile numbers.  \n"
+                                f"[Verify on TRAI Header Portal ↗](https://smsheader.trai.gov.in)",
+                                icon="🏛️",
                             )
-                    else:
-                        st.markdown("- None detected")
 
-                with col_exp2:
-                    st.markdown("**Tokens pushing toward NOT SPAM (✅):**")
-                    if explanation_result["ham_features"]:
-                        for hf in explanation_result["ham_features"]:
+                        with st.container(border=True):
                             st.markdown(
-                                f"- `{hf['token']}` — pushed toward NOT SPAM "
-                                f"(impact: `{hf['contribution']:.3f}`)"
+                                '<p class="eyebrow">Synthesized Evidence</p>',
+                                unsafe_allow_html=True,
                             )
-                    else:
-                        st.markdown("- None detected")
+                            st.markdown(
+                                f"- **SMS Classification:** `{prediction}` — {confidence:.1f}% confidence  \n"
+                                f"- **Task 3 Risk Level:** `{risk_level}`  \n"
+                                f"- **Vocabulary Tokens Matched:** `{nnz if nnz is not None else 'N/A'}` TF-IDF non-zero  \n"
+                                f"- **URLs Detected:** `{len(urls)}`"
+                            )
 
-            # 3. Explanation summary
-            st.markdown("#### 📝 Explanation summary")
-            st.caption(f"**Evidence summary:** {explanation_result['summary']}")
+                        with st.container(border=True):
+                            st.markdown(
+                                '<p class="eyebrow">Rule-Based Indicators</p>',
+                                unsafe_allow_html=True,
+                            )
+                            if indicators:
+                                for ind in indicators:
+                                    st.markdown(f"⚠️ {ind}")
+                            else:
+                                st.caption("No rule-based trigger phrases matched.")
 
-            # ------------------------------------------------------------------
-            # TASK 4.6 — WHAT SHOULD I DO? (SAFETY GUIDANCE)
-            # ------------------------------------------------------------------
-            st.divider()
-            st.subheader("🛡️ What should I do?")
+                    # ── TAB 2: URL FORENSICS ─────────────────────────────────
+                    with tab_urls:
+                        if not urls:
+                            st.info("No URLs were detected in this message.", icon="ℹ️")
+                        else:
+                            st.caption(
+                                f"{len(urls)} URL(s) analyzed locally using **barb-phish** "
+                                "(offline heuristics — no data sent externally)."
+                            )
+                            for ur in url_results:
+                                exit_code = ur["exit_code"]
+                                verdict   = ur["verdict"] or "UNKNOWN"
+                                label, emoji = _BARB_EXIT_LABELS.get(exit_code, ("UNKNOWN", "⚪"))
+                                defanged  = defang_url(ur["url"])
 
-            safety_guidance = get_safety_guidance(overall_state, t3_result, url_results)
-            for act in safety_guidance["actions"]:
-                st.markdown(f"- {act}")
+                                with st.container(border=True):
+                                    st.markdown(
+                                        f'<p class="eyebrow">{emoji} {verdict} — URL Forensic Report</p>'
+                                        f'<span class="defanged-url">{defanged}</span>',
+                                        unsafe_allow_html=True,
+                                    )
 
-            # ------------------------------------------------------------------
-            # TASK 4.6 — OFFICIAL REPORTING & VERIFICATION (TRAI / DoT / MHA)
-            # ------------------------------------------------------------------
-            st.divider()
-            st.subheader("🏛️ Official Reporting & Verification")
-            st.caption("Verified primary Government of India telecom and cybercrime reporting channels.")
+                                    if ur["error"]:
+                                        st.warning(ur["error"])
+                                    else:
+                                        ua, ub = st.columns(2)
+                                        with ua:
+                                            st.metric("Verdict", f"{emoji} {verdict}")
+                                        with ub:
+                                            score_display = (
+                                                f"{ur['risk_score']:.1f}"
+                                                if ur["risk_score"] is not None
+                                                else "N/A"
+                                            )
+                                            st.metric("Risk Score", score_display)
 
-            if sender_id_input.strip():
-                s_id = sender_id_input.strip().upper()
-                st.info(
-                    f"**Sender ID Guidance for `{s_id}`:**  \n\n"
-                    "• **Official Format:** In India, legitimate commercial and transactional SMS headers follow the format **`XY-ABCDEF`** "
-                    "(where `X` denotes the telecom operator, `Y` denotes the service circle, and `ABCDEF` represents the registered organization).  \n"
-                    "• **Important Red Flag:** Legitimate banks and government departments do not send official transactional or alert SMS from personal 10-digit mobile numbers.  \n"
-                    f"• **Verify Ownership:** Look up whether `{s_id}` is an officially registered Principal Entity on the [TRAI Header Information Portal](https://smsheader.trai.gov.in)."
-                )
+                                        if ur["signals"]:
+                                            with st.expander("🔎 Detected Signals", expanded=False):
+                                                for sig in ur["signals"]:
+                                                    sev    = sig.get("severity", "")
+                                                    lbl    = sig.get("label", "")
+                                                    detail = sig.get("detail", "")
+                                                    sev_emoji = {
+                                                        "HIGH": "🔴", "MEDIUM": "🟡", "LOW": "🟢"
+                                                    }.get(sev, "⚪")
+                                                    st.markdown(f"- {sev_emoji} **{lbl}**: {detail}")
+                                        else:
+                                            st.caption("No suspicious signals detected for this URL.")
 
-            with st.expander("📌 Official Government Portals & Helplines (TRAI, DoT, MHA)", expanded=True):
-                for rep in get_official_reporting_info():
-                    st.markdown(
-                        f"**{rep['agency']} — [{rep['portal']}]({rep['url']})**  \n"
-                        f"- *Purpose:* {rep['purpose']}  \n"
-                        f"- *Recommended Action:* {rep['action']}"
-                    )
+                                        with st.expander("🔧 Technical Telemetry", expanded=False):
+                                            st.markdown(
+                                                f"- **Exit Code:** `{exit_code}` — {label}  \n"
+                                                f"- **Original URL:** `{ur['url']}`"
+                                            )
+                                            if ur["raw"]:
+                                                st.json(ur["raw"])
+
+                    # ── TAB 3: EXPLAINABILITY ────────────────────────────────
+                    with tab_explain:
+                        st.markdown(
+                            "These chips show which vocabulary terms most influenced "
+                            "the model's prediction.  \n"
+                            "Impact = `TF-IDF weight × logistic regression coefficient`."
+                        )
+
+                        if not explanation_result["has_features"]:
+                            st.info(
+                                f"**No recognized vocabulary tokens:** {explanation_result['summary']}",
+                                icon="ℹ️",
+                            )
+                        else:
+                            exp_left, exp_right = st.columns(2, gap="medium")
+
+                            with exp_left:
+                                with st.container(border=True):
+                                    st.markdown(
+                                        '<p class="eyebrow">🚨 Pushes Toward SPAM</p>',
+                                        unsafe_allow_html=True,
+                                    )
+                                    if explanation_result["spam_features"]:
+                                        chips = " ".join(
+                                            f'<span class="token-spam">'
+                                            f'{sf["token"]} <b>+{sf["contribution"]:.3f}</b>'
+                                            f'</span>'
+                                            for sf in explanation_result["spam_features"]
+                                        )
+                                        st.markdown(chips, unsafe_allow_html=True)
+                                    else:
+                                        st.caption("None detected.")
+
+                            with exp_right:
+                                with st.container(border=True):
+                                    st.markdown(
+                                        '<p class="eyebrow">✅ Pushes Toward NOT SPAM</p>',
+                                        unsafe_allow_html=True,
+                                    )
+                                    if explanation_result["ham_features"]:
+                                        chips = " ".join(
+                                            f'<span class="token-ham">'
+                                            f'{hf["token"]} <b>{hf["contribution"]:.3f}</b>'
+                                            f'</span>'
+                                            for hf in explanation_result["ham_features"]
+                                        )
+                                        st.markdown(chips, unsafe_allow_html=True)
+                                    else:
+                                        st.caption("None detected.")
+
+                        st.caption(f"**Evidence summary:** {explanation_result['summary']}")
+
+                    # ── TAB 4: SAFETY & REPORTING ────────────────────────────
+                    with tab_safety:
+                        with st.container(border=True):
+                            st.markdown(
+                                '<p class="eyebrow">Recommended Actions</p>',
+                                unsafe_allow_html=True,
+                            )
+                            for act in safety_guidance["actions"]:
+                                st.markdown(
+                                    f"<div class='guidance-item'>&bull; {act}</div>",
+                                    unsafe_allow_html=True,
+                                )
+
+                        with st.expander(
+                            "🏛️ Official Government Reporting Portals (TRAI · DoT · MHA)",
+                            expanded=False,
+                        ):
+                            st.caption(
+                                "Verified primary Government of India telecom and cybercrime reporting channels."
+                            )
+                            for rep in get_official_reporting_info():
+                                st.markdown(
+                                    f"**{rep['agency']} — [{rep['portal']}]({rep['url']})**  \n"
+                                    f"- *Purpose:* {rep['purpose']}  \n"
+                                    f"- *Recommended Action:* {rep['action']}"
+                                )
+                                st.divider()
+
+    # =========================================================================
+    # FOOTER
+    # =========================================================================
+    st.markdown(
+        '<hr style="border-color:rgba(255,255,255,0.07);margin-top:28px"/>'
+        '<p style="text-align:center;font-size:0.75rem;color:#475569;margin-top:6px">'
+        '🔒 <strong>Privacy First</strong> &middot; All analysis is performed locally on this device. '
+        'No SMS content is transmitted to any external API or server. '
+        '&nbsp;|&nbsp; AI internship project &middot; SWYNEX Technologies'
+        '</p>',
+        unsafe_allow_html=True,
+    )
+
 
 # ---------------------------------------------------------------------------
-# FOOTER
+# ENTRY POINT — run UI only when Streamlit server is actually executing this
 # ---------------------------------------------------------------------------
-st.divider()
-st.caption(
-    "🔒 Privacy: All analysis is performed locally. "
-    "No SMS data is sent to any external API or server."
-)
+try:
+    from streamlit.runtime.scriptrunner import get_script_run_ctx as _get_ctx
+    if _get_ctx() is not None:
+        _run_ui()
+except Exception:
+    # Fallback for older Streamlit builds or direct `streamlit run` invocation.
+    # Tests never reach here because they stub `streamlit` as a MagicMock
+    # and that MagicMock import will raise AttributeError before this point.
+    pass
