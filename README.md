@@ -128,4 +128,30 @@ Develop a beginner-friendly web application where users can enter a message and 
 The final system will provide a simple interface where a user can enter a text message and receive an AI-based Spam or Not Spam prediction with a confidence score.
 
 Internship: SWYNEX Technologies
-Task: Task 1 — AI Problem Design
+Task: Task 4 — Final AI Application
+
+## 12. Running the Final Application (Task 4)
+
+The application runs entirely locally with zero external network data transmission.
+
+### Prerequisites & Environment Setup
+Ensure the project virtual environment is active and has the required dependencies installed:
+
+```bash
+.venv\Scripts\pip install -r requirements_app.txt
+```
+
+### Launch the Streamlit App
+Run the application using the project virtual environment:
+
+```bash
+.venv\Scripts\streamlit run app.py
+```
+
+### Application Features
+- **SMS Classification**: Local TF-IDF + Logistic Regression model from Task 2.
+- **Intelligent Detection**: Rule-based trigger phrase extraction and risk levels from Task 3.
+- **Local URL Analysis**: Offline heuristic URL security scanning via `barb-phish` (Task 4.3).
+- **Risk Synthesis**: Deterministic assessment combining text classification and URL signals into 4 states: `SCAM`, `SPAM`, `UNCERTAIN`, and `NO THREAT DETECTED` (Task 4.4).
+- **Model Explainability**: Transparent token contribution breakdown based on model weights, with zero-vocabulary OOV handling (Task 4.5).
+- **Actionable Safety Guidance**: State-specific recommendations and verified Indian telecom/cybercrime reporting channels (TRAI, DoT Chakshu, MHA 1930) (Task 4.6).

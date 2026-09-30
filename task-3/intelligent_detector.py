@@ -143,15 +143,16 @@ def display_result(message):
     print("=" * 60)
 
 
-print("=" * 60)
-print("SWYNEX TASK 3 - INTELLIGENT SMS ANALYZER")
-print("=" * 60)
+if __name__ == "__main__":
+    print("=" * 60)
+    print("SWYNEX TASK 3 - INTELLIGENT SMS ANALYZER")
+    print("=" * 60)
 
-while True:
-    message = input("\nEnter an SMS message (or type 'exit' to stop): ")
+    while True:
+        message = input("\nEnter an SMS message (or type 'exit' to stop): ")
 
-    if message.lower().strip() == "exit":
-        print("Analysis completed.")
-        break
+        if message.lower().strip() == "exit":
+            print("Analysis completed.")
+            break
 
-    display_result(message)
+        display_result(message)
