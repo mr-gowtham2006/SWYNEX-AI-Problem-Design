@@ -157,7 +157,7 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Enable CORS for local development (Vite dev server runs on 5173 or 3000)
+# Enable CORS for local development and production Netlify frontend
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -167,6 +167,7 @@ app.add_middleware(
         "http://127.0.0.1:3000",
         "http://localhost:8000",
         "http://127.0.0.1:8000",
+        "https://safesms.netlify.app",
     ],
     allow_credentials=True,
     allow_methods=["*"],
